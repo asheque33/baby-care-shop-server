@@ -9,11 +9,11 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: "*", credentials: true }));
 app.use(express.json());
 
 // MongoDB Connection
-const uri = process.env.SERVER_URI;
+const uri = process.env.NEXT_PUBLIC_DATABASE_URI;
 
 const client = new MongoClient(uri, {
   // useNewUrlParser: true,
@@ -30,6 +30,7 @@ async function run() {
     const usersCollection = db.collection("users");
     const productsCollection = db.collection("baby accessories");
     const categoriesCollection = db.collection("categories");
+    const ordersCollection = db.collection("orders");
 
     // * Authentication & Authorization
     // User Registration
@@ -79,20 +80,20 @@ async function run() {
       }
 
       // Generate JWT token
-      const token = jwt.sign(
-        { email: user.email, role: user.role },
-        process.env.JWT_SECRET,
+      const accessToken = jwt.sign(
+        { name: user.name, email: user.email, role: user.role },
+        process.env.NEXT_PUBLIC_JWT_SECRET,
         {
-          expiresIn: process.env.EXPIRES_IN,
+          expiresIn: process.env.NEXT_PUBLIC_EXPIRES_IN,
         }
       );
 
+      console.log(accessToken);
       res.json({
         success: true,
         message: "Login successful",
-        token,
+        accessToken,
       });
-      console.log(token);
     });
 
     // =============================================================
@@ -134,6 +135,15 @@ async function run() {
         });
       }
     });
+    //  get all  categories
+    app.get("/categories", async (req, res) => {
+      const result = await categoriesCollection.find({}).toArray();
+      res.status(200).json({
+        success: true,
+        message: "All Categories retrieved successfully",
+        data: result,
+      });
+    });
     // get specific categories
     app.get("/baby-accessories", async (req, res) => {
       const name = req.query.category;
@@ -146,15 +156,6 @@ async function run() {
         categories = await productsCollection.find({}).toArray();
       }
       res.send({ status: true, message: "success", data: categories });
-    });
-    //  get all  categories
-    app.get("/categories", async (req, res) => {
-      const result = await categoriesCollection.find({}).toArray();
-      res.status(200).json({
-        success: true,
-        message: "All Categories retrieved successfully",
-        data: result,
-      });
     });
     // * update a product
     app.put("/products/:productId", async (req, res) => {
@@ -248,6 +249,89 @@ async function run() {
         success: true,
         message: "Category created successfully",
         data: result,
+      });
+    });
+
+    // * create a new order
+    app.post("/order", async (req, res) => {
+      const {
+        userName,
+        userEmail,
+        products,
+        totalItems,
+        totalAmount,
+        paymentMethod,
+        status,
+      } = req.body;
+      const result = await ordersCollection.insertOne({
+        userName,
+        userEmail,
+        products,
+        totalItems,
+        totalAmount,
+        paymentMethod,
+        status,
+        createdAt: new Date(),
+      });
+      res.status(200).json({
+        success: true,
+        message: "Order created successfully",
+        data: result,
+      });
+    });
+    // * get all orders or user-specific orders
+    app.get("/orders", async (req, res) => {
+      const { userEmail } = req.query;
+
+      let result;
+      if (userEmail) {
+        // If userEmail is provided, get specific user's orders
+        result = await ordersCollection.find({ userEmail }).toArray();
+        res.status(200).json({
+          success: true,
+          message: "User Orders retrieved successfully",
+          data: result,
+        });
+      } else {
+        // If no userEmail is provided, get all orders
+        result = await ordersCollection.find({}).toArray();
+        res.status(200).json({
+          success: true,
+          message: "All Orders retrieved successfully",
+          data: result,
+        });
+      }
+    });
+    // * get specific order
+    app.get("/orders/:orderId", async (req, res) => {
+      const id = req.params.orderId;
+      const _id = new ObjectId(id);
+      const result = await ordersCollection.findOne({ _id });
+
+      res.status(200).json({
+        success: true,
+        message: "Order retrieved successfully",
+        data: result,
+      });
+    });
+    //  * update a specific order
+    app.put("/orders/:orderId", async (req, res) => {
+      const id = req.params.orderId;
+      const _id = new ObjectId(id);
+      const data = req.body;
+      const updatedOrder = {
+        $set: {
+          status: "delivered",
+          ...data,
+        },
+      };
+
+      const result = await ordersCollection.updateOne({ _id }, updatedOrder);
+
+      res.status(200).json({
+        success: true,
+        message: "Order updated successfully",
+        data: updatedOrder,
       });
     });
 
